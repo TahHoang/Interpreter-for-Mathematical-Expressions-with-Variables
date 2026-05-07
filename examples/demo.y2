@@ -1,0 +1,76 @@
+// examples/demo.y2
+// ─────────────────────────────────────────────────────────────────────────────
+// Y2 Math Interpreter — feature demonstration script
+// Run:  python main.py examples/demo.y2
+// ─────────────────────────────────────────────────────────────────────────────
+
+writeln "=== Y2 Math Interpreter Demo ==="
+writeln ""
+
+// ── Basic arithmetic ──────────────────────────────────────────────────────────
+writeln "-- Arithmetic --"
+x = 2 + 3 * 4
+write "2 + 3 * 4 = "
+writeln x
+
+x = (2 + 3) * 4
+write "(2 + 3) * 4 = "
+writeln x
+
+x = 2 ^ 10
+write "2 ^ 10 = "
+writeln x
+
+writeln ""
+
+// ── Variables ─────────────────────────────────────────────────────────────────
+writeln "-- Variables --"
+a = 12
+b = 7
+sum = a + b
+diff = a - b
+prod = a * b
+write "a=12, b=7   sum="
+write sum
+write "  diff="
+write diff
+write "  prod="
+writeln prod
+writeln ""
+
+// ── Built-in functions ────────────────────────────────────────────────────────
+writeln "-- Functions --"
+write "sqrt(144) = "
+writeln sqrt(144)
+
+write "sin(0)   = "
+writeln sin(0)
+
+write "cos(0)   = "
+writeln cos(0)
+
+write "abs(-42) = "
+writeln abs(-42)
+
+write "log(1)   = "
+writeln log(1)
+
+write "exp(1)   = "
+writeln exp(1)
+writeln ""
+
+// ── Quadratic formula  x = [-b ± sqrt(b²-4ac)] / 2a ─────────────────────────
+writeln "-- Quadratic formula: x^2 - 5x + 6 = 0 --"
+qa = 1
+qb = -5
+qc = 6
+disc = qb^2 - 4*qa*qc
+x1 = (-qb + sqrt(disc)) / (2*qa)
+x2 = (-qb - sqrt(disc)) / (2*qa)
+write "x1 = "
+writeln x1
+write "x2 = "
+writeln x2
+writeln ""
+
+writeln "=== End of Demo ==="
