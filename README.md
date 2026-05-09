@@ -11,7 +11,7 @@ The project is structured as a full compiler pipeline — **Lexer → Parser →
 ## Project Structure
 
 ```
-PPL_Project/
+Interpreter-for-Mathematical-Expressions-with-Variables/
 ├── main.py                          # CLI entry point: REPL, script runner, one-liner
 ├── app.py                           # Flask server — Compiler Visualizer  (port 5000)
 │
@@ -70,7 +70,7 @@ antlr4 -Dlanguage=Python3 -visitor grammar/Y2Expression.g4 -o generated/
 ## Installation
 
 ```bash
-git clone https://github.com/your-username/PPL_Project.git
+git clone https://github.com/TahHoang/Interpreter-for-Mathematical-Expressions-with-Variables.git
 cd PPL_Project
 pip install flask flask-cors
 ```
