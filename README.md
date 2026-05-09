@@ -295,7 +295,7 @@ The test suite covers:
 **`ModuleNotFoundError: No module named 'generated'`**
 Run from the project root, not a subdirectory:
 ```bash
-cd PPL_Project
+cd Interpreter-for-Mathematical-Expressions-with-Variables
 python app.py
 ```
 
