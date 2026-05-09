@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Compiler Visualizer — Y2</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+  <style>
+    /* ── Visualizer-specific overrides ── */
+    .viz-app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .viz-topbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-surface);
+      flex-shrink: 0;
+    }
+
+    .viz-topbar .logo { font-size: 15px; }
+    .viz-topbar .logo-sub { font-size: 13px; }
+
+    .viz-input {
+      flex: 1;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-primary);
+      padding: 7px 12px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .viz-input:focus { border-color: var(--accent); }
+
+    /* ── 3-column panels ── */
+    .viz-panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .viz-panel {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .viz-panel:last-child { border-right: none; }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-surface);
+      flex-shrink: 0;
+    }
+
+    .panel-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .phase-num {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .ph1 { background: rgba(130,100,220,.25); color: #c792ea; }
+    .ph2 { background: rgba(78,201,148,.2);   color: #4ec994; }
+    .ph3 { background: rgba(91,143,249,.2);   color: #5b8ff9; }
+
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 16px;
+    }
+
+    /* ── Token pills ── */
+    .token-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    .tok-pill {
+      display: inline-flex; flex-direction: column; align-items: center;
+      padding: 5px 9px; border-radius: 6px; border: 1px solid;
+      font-size: 11px; font-family: var(--font-mono); cursor: default;
+      transition: transform .1s;
+    }
+    .tok-pill:hover { transform: scale(1.06); }
+    .tok-type { font-size: 9px; font-weight: 600; opacity: .7; margin-bottom: 2px; text-transform: uppercase; }
+    .tok-val  { font-weight: 600; font-size: 12px; }
+
+    .tok-NUMBER    { background: #2a1f00; border-color: #a06500; color: #f5c842; }
+    .tok-IDENTIFIER{ background: #1c1540; border-color: #7f77dd; color: #c792ea; }
+    .tok-FUNC      { background: #0d2a20; border-color: #2e9e70; color: #4ec994; }
+    .tok-ASSIGN,.tok-PLUS,.tok-MINUS,.tok-STAR,.tok-SLASH,.tok-PERCENT,.tok-CARET
+                   { background: #0d1e30; border-color: #2b6cb0; color: #5b8ff9; }
+    .tok-LPAREN,.tok-RPAREN
+                   { background: #1e1e1e; border-color: #555; color: #aaa; }
+    .tok-WRITE,.tok-WRITELN,.tok-READN,.tok-EXIT,.tok-RUN
+                   { background: #2a1010; border-color: #9e3e2e; color: #f07178; }
+    .tok-EOF       { background: #111; border-color: #333; color: #555; }
+
+    /* ── AST tree ── */
+    .ast-tree { font-family: var(--font-mono); font-size: 12px; line-height: 2; }
+
+    .ast-node-wrap { display: flex; flex-direction: column; }
+
+    .ast-node-row {
+      display: flex; align-items: center; gap: 6px;
+      padding: 1px 4px; border-radius: 4px; cursor: default;
+      transition: background .1s;
+    }
+    .ast-node-row:hover { background: var(--bg-hover); }
+
+    .ast-icon { font-size: 10px; opacity: .5; }
+
+    .ast-label {
+      padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 500;
+    }
+
+    .lbl-Program    { background: rgba(255,255,255,.06); color: var(--text-secondary); }
+    .lbl-Assignment { background: rgba(91,143,249,.15);  color: #5b8ff9; }
+    .lbl-BinaryOp   { background: rgba(78,201,148,.15);  color: #4ec994; }
+    .lbl-FuncCall   { background: rgba(130,100,220,.2);  color: #c792ea; }
+    .lbl-UnaryMinus { background: rgba(240,113,120,.15); color: #f07178; }
+    .lbl-Number     { background: rgba(245,200,66,.15);  color: #f5c842; }
+    .lbl-VarRef     { background: rgba(130,100,220,.15); color: #c792ea; }
+    .lbl-WriteCmd,.lbl-WritelnCmd
+                    { background: rgba(240,113,120,.12); color: #f07178; }
+    .lbl-StringLiteral { background: rgba(245,200,66,.1); color: #f5c842; }
+
+    .ast-children { padding-left: 18px; border-left: 1px solid var(--border); margin-left: 9px; }
+
+    /* ── Eval steps ── */
+    .steps-list { display: flex; flex-direction: column; gap: 4px; }
+
+    .step-row {
+      display: flex; align-items: baseline; gap: 8px;
+      font-family: var(--font-mono); font-size: 12px;
+      padding: 5px 8px; border-radius: 5px;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+    }
+
+    .step-num  { color: var(--text-muted); font-size: 10px; min-width: 18px; }
+    .step-expr { color: var(--text-secondary); flex: 1; }
+    .step-arrow{ color: var(--text-muted); }
+    .step-result { font-weight: 600; }
+
+    .step-eval   .step-result { color: #5b8ff9; }
+    .step-func   .step-result { color: #c792ea; }
+    .step-assign .step-result { color: #4ec994; }
+    .step-output .step-result { color: #f5c842; }
+
+    .step-badge {
+      font-size: 9px; padding: 1px 6px; border-radius: 10px;
+      font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+    }
+    .badge-eval   { background: rgba(91,143,249,.15);  color: #5b8ff9; }
+    .badge-func   { background: rgba(130,100,220,.2);  color: #c792ea; }
+    .badge-assign { background: rgba(78,201,148,.15);  color: #4ec994; }
+    .badge-output { background: rgba(245,200,66,.15);  color: #f5c842; }
+
+    /* ── Var table (bottom of eval panel) ── */
+    .vars-section {
+      border-top: 1px solid var(--border);
+      padding: 10px 16px 12px;
+      flex-shrink: 0;
+    }
+    .vars-label {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .05em; color: var(--text-muted); margin-bottom: 6px;
+    }
+    .vars-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+    .var-pill {
+      font-size: 11px; font-family: var(--font-mono);
+      padding: 3px 9px; border-radius: 20px;
+      background: rgba(91,143,249,.12); color: #5b8ff9;
+      border: 1px solid rgba(91,143,249,.2);
+    }
+
+    /* ── Error banner ── */
+    .error-banner {
+      display: none;
+      align-items: flex-start; gap: 8px;
+      margin: 10px 16px; padding: 10px 12px;
+      background: rgba(240,113,120,.1);
+      border: 1px solid rgba(240,113,120,.3);
+      border-radius: 6px;
+      font-size: 12px; font-family: var(--font-mono);
+      color: #f07178;
+    }
+    .error-banner.show { display: flex; }
+    .error-phase {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      padding: 2px 6px; border-radius: 4px;
+      background: rgba(240,113,120,.2); flex-shrink: 0;
+    }
+
+    /* ── Empty / hint ── */
+    .empty { color: var(--text-muted); font-size: 12px; font-style: italic; }
+
+    /* ── Nav link ── */
+    .nav-link {
+      font-size: 12px; color: var(--text-muted);
+      text-decoration: none; padding: 4px 10px;
+      border: 1px solid var(--border); border-radius: 5px;
+      transition: color .1s, border-color .1s;
+    }
+    .nav-link:hover { color: var(--text-primary); border-color: var(--border-md); }
+
+    /* ── Token count badge ── */
+    .tok-count { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+  </style>
+</head>
+<body>
+<div class="viz-app">
+
+  <!-- Topbar -->
+  <div class="viz-topbar">
+    <span class="logo">Y2</span>
+    <span class="logo-sub">Compiler Visualizer</span>
+    <input class="viz-input" id="viz-input"
+           placeholder="Nhập biểu thức Y2, ví dụ:  result = sqrt(9) + 2 * 3"
+           value="result = sqrt(9) + 2 * 3" />
+    <button class="btn-run" id="btn-analyze">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polygon points="5 3 19 12 5 21 5 3"/>
+      </svg>
+      Analyze
+    </button>
+    <a href="/" class="nav-link">← REPL</a>
+  </div>
+
+  <!-- Error banner -->
+  <div class="error-banner" id="error-banner">
+    <span class="error-phase" id="error-phase">error</span>
+    <span id="error-msg"></span>
+  </div>
+
+  <!-- 3 panels -->
+  <div class="viz-panels">
+
+    <!-- Panel 1: Lexer -->
+    <div class="viz-panel">
+      <div class="panel-header">
+        <div class="phase-num ph1">1</div>
+        <span class="panel-title" style="color:#c792ea">Lexer</span>
+        <span style="font-size:11px;color:var(--text-muted)">Token stream</span>
+        <span class="tok-count" id="tok-count"></span>
+      </div>
+      <div class="panel-body">
+        <div class="token-grid" id="token-grid">
+          <span class="empty">Nhập biểu thức để xem tokens...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 2: AST -->
+    <div class="viz-panel">
+      <div class="panel-header">
+        <div class="phase-num ph2">2</div>
+        <span class="panel-title" style="color:#4ec994">Parser</span>
+        <span style="font-size:11px;color:var(--text-muted)">Abstract Syntax Tree</span>
+      </div>
+      <div class="panel-body">
+        <div class="ast-tree" id="ast-tree">
+          <span class="empty">AST sẽ hiện ở đây...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 3: Evaluator -->
+    <div class="viz-panel" style="display:flex;flex-direction:column;">
+      <div class="panel-header">
+        <div class="phase-num ph3">3</div>
+        <span class="panel-title" style="color:#5b8ff9">Evaluator</span>
+        <span style="font-size:11px;color:var(--text-muted)">Step-by-step</span>
+      </div>
+      <div class="panel-body" style="flex:1">
+        <div class="steps-list" id="steps-list">
+          <span class="empty">Các bước tính toán sẽ hiện ở đây...</span>
+        </div>
+      </div>
+      <div class="vars-section" id="vars-section" style="display:none">
+        <div class="vars-label">Symbol Table</div>
+        <div class="vars-pills" id="vars-pills"></div>
+      </div>
+    </div>
+
+  </div><!-- /panels -->
+</div>
+
+<script src="/static/visualizer.js"></script>
+</body>
+</html>

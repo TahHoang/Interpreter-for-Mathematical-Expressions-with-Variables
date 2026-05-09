@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Y2 Math Interpreter</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ── Layout ──────────────────────────────────────────────────────────────── -->
+<div class="app">
+
+  <!-- Sidebar: bảng biến -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6M3 15h6"/></svg>
+        Symbol Table
+      </span>
+      <button id="btn-reset" class="btn-ghost btn-sm" title="Reset session">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        Reset
+      </button>
+    </div>
+    <div class="var-table-wrap">
+      <table class="var-table" id="var-table">
+        <thead><tr><th>Biến</th><th>Giá trị</th></tr></thead>
+        <tbody id="var-tbody">
+          <tr class="var-empty"><td colspan="2">Chưa có biến nào</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="examples-section">
+      <p class="examples-label">Ví dụ nhanh</p>
+      <button class="example-btn" data-code="x = 3 * 4&#10;writeln x">x = 3 * 4</button>
+      <button class="example-btn" data-code="writeln sqrt(144)">sqrt(144)</button>
+      <button class="example-btn" data-code="a = 1&#10;b = -5&#10;c = 6&#10;disc = b^2 - 4*a*c&#10;x1 = (-b + sqrt(disc)) / (2*a)&#10;x2 = (-b - sqrt(disc)) / (2*a)&#10;write &quot;x1 = &quot;&#10;writeln x1&#10;write &quot;x2 = &quot;&#10;writeln x2">Nghiệm bậc 2</button>
+      <button class="example-btn" data-code="pi = 3.14159&#10;r = 5&#10;area = pi * r ^ 2&#10;write &quot;Diện tích = &quot;&#10;writeln area">Diện tích tròn</button>
+      <button class="example-btn" data-code="writeln sin(0)&#10;writeln cos(0)&#10;writeln exp(1)">sin / cos / exp</button>
+    </div>
+  </aside>
+
+  <!-- Main: editor + output -->
+  <main class="main">
+
+    <!-- Header -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="logo">Y2</span>
+        <span class="logo-sub">Math Interpreter</span>
+        <span class="version-badge">PPL Project</span>
+      </div>
+      <div class="topbar-right">
+        <span class="status-dot" id="status-dot" title="Trạng thái kết nối"></span>
+        <span class="status-text" id="status-text">Sẵn sàng</span>
+      </div>
+    </header>
+
+    <!-- Output terminal -->
+    <div class="terminal" id="terminal" role="log" aria-label="Kết quả thực thi" aria-live="polite">
+      <div class="terminal-welcome">
+        <span class="term-comment">// Y2 Math Interpreter — PPL Project</span><br/>
+        <span class="term-comment">// Nhập code vào editor bên dưới, nhấn Run hoặc Ctrl+Enter</span><br/>
+        <span class="term-comment">// Gõ <strong>exit</strong> để reset session</span>
+      </div>
+    </div>
+
+    <!-- Editor -->
+    <div class="editor-wrap">
+      <div class="editor-toolbar">
+        <span class="editor-label">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          Y2 Script
+        </span>
+        <div class="editor-actions">
+          <button class="btn-ghost btn-sm" id="btn-clear-editor" title="Xóa editor">Xóa</button>
+          <button class="btn-ghost btn-sm" id="btn-clear-terminal" title="Xóa output">Xóa output</button>
+          <button class="btn-run" id="btn-run">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Run
+            <kbd>Ctrl+↵</kbd>
+          </button>
+        </div>
+      </div>
+
+      <div class="editor-body">
+        <!-- Line numbers -->
+        <div class="line-numbers" id="line-numbers" aria-hidden="true">1</div>
+        <!-- Textarea -->
+        <textarea
+          id="editor"
+          class="editor-textarea"
+          spellcheck="false"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          placeholder="// Nhập code Y2 ở đây&#10;x = sqrt(9) + 2 * 3&#10;writeln x"
+          rows="8"
+        ></textarea>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="/static/repl.js"></script>
+</body>
+</html>
