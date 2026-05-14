@@ -10,7 +10,7 @@ import sys, os, io, math, unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from Y2MathInterpreter import Y2MathInterpreter, InterpreterError
+from Y2MathInterpreter import Y2MathInterpreter, InterpreterError, SemanticError
 from generated import LexerError, ParseError
 from generated.Y2ExpressionLexer import Y2ExpressionLexer, Token, T_NUMBER, T_PLUS, T_IDENTIFIER
 from generated.Y2ExpressionParser import Y2ExpressionParser
@@ -118,8 +118,12 @@ class TestParser(unittest.TestCase):
         self.assertIsInstance(outer.right, BinaryOpNode)
 
     def test_missing_rparen_raises(self):
-        with self.assertRaises(ParseError):
-            self._parse("x = (3 + 4")
+        from generated.Y2ExpressionParser import Y2ExpressionParser
+        from generated.Y2ExpressionLexer import Y2ExpressionLexer
+        toks = Y2ExpressionLexer("x = (3 + 4").getAllTokens()
+        p = Y2ExpressionParser(toks)
+        p.program()
+        self.assertTrue(len(p.errors) > 0, "Parser should have recorded an error")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -178,7 +182,7 @@ class TestVariables(unittest.TestCase):
         self.assertAlmostEqual(result["x"], 3.0)
 
     def test_undefined_variable(self):
-        with self.assertRaises(InterpreterError):
+        with self.assertRaises((InterpreterError, SemanticError)):
             _eval("y = z + 1")
 
     def test_underscore_name(self):
@@ -221,7 +225,7 @@ class TestFunctions(unittest.TestCase):
             _eval("x = sqrt(-1)")
 
     def test_unknown_function(self):
-        with self.assertRaises(InterpreterError):
+        with self.assertRaises((InterpreterError, SemanticError)):
             _eval("x = magic(3)")
 
 
@@ -241,11 +245,11 @@ class TestCommands(unittest.TestCase):
 
     def test_write_expr(self):
         out, _ = _run("write 3 + 4")
-        self.assertEqual(out, "7.0")
+        self.assertEqual(out, "7")
 
     def test_writeln_expr(self):
         out, _ = _run("writeln 2 ^ 8")
-        self.assertEqual(out, "256.0\n")
+        self.assertEqual(out, "256\n")
 
     def test_readn(self):
         result = _eval.__wrapped__ if hasattr(_eval, "__wrapped__") else None
@@ -270,7 +274,7 @@ c = a + b
 write c
 """
         out, _ = _run(src)
-        self.assertEqual(out, "30.0")
+        self.assertEqual(out, "30")
 
     def test_comments_ignored(self):
         src = """
@@ -295,7 +299,7 @@ result = sqrt(a)
 write result
 """
         out, _ = _run(src)
-        self.assertEqual(out, "12.0")
+        self.assertEqual(out, "12")
 
     def test_compound_formula(self):
         """Quadratic formula discriminant."""
@@ -342,6 +346,218 @@ write b
 """
         out, _ = _run(src)
         self.assertAlmostEqual(float(out), 21.0)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v2.0 — Boolean, Comparison, Logical
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestBoolean(unittest.TestCase):
+
+    def test_true_literal(self):
+        self.assertEqual(_eval("x = true")["x"], True)
+
+    def test_false_literal(self):
+        self.assertEqual(_eval("x = false")["x"], False)
+
+    def test_compare_eq(self):
+        self.assertEqual(_eval("x = (3 == 3)")["x"], True)
+
+    def test_compare_neq(self):
+        self.assertEqual(_eval("x = (3 != 4)")["x"], True)
+
+    def test_compare_lt(self):
+        self.assertEqual(_eval("x = (2 < 5)")["x"], True)
+
+    def test_compare_gt(self):
+        self.assertEqual(_eval("x = (5 > 2)")["x"], True)
+
+    def test_compare_leq(self):
+        self.assertEqual(_eval("x = (3 <= 3)")["x"], True)
+
+    def test_compare_geq(self):
+        self.assertEqual(_eval("x = (4 >= 3)")["x"], True)
+
+    def test_logical_and_true(self):
+        self.assertEqual(_eval("x = true and true")["x"], True)
+
+    def test_logical_and_false(self):
+        self.assertEqual(_eval("x = true and false")["x"], False)
+
+    def test_logical_or(self):
+        self.assertEqual(_eval("x = false or true")["x"], True)
+
+    def test_logical_not(self):
+        self.assertEqual(_eval("x = not false")["x"], True)
+
+    def test_complex_bool(self):
+        self.assertEqual(_eval("x = 3 > 2 and not false")["x"], True)
+
+    def test_bool_in_var(self):
+        result = _eval("a = true\nb = not a")
+        self.assertEqual(result["b"], False)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v2.0 — if/else
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestIfElse(unittest.TestCase):
+
+    def test_if_true_branch(self):
+        out, _ = _run('if true then\n  writeln "yes"\nend')
+        self.assertEqual(out.strip(), "yes")
+
+    def test_if_false_branch(self):
+        out, _ = _run('if false then\n  writeln "yes"\nelse\n  writeln "no"\nend')
+        self.assertEqual(out.strip(), "no")
+
+    def test_if_compare_condition(self):
+        out, _ = _run('x = 5\nif x > 3 then\n  writeln "big"\nelse\n  writeln "small"\nend')
+        self.assertEqual(out.strip(), "big")
+
+    def test_if_assigns_variable(self):
+        result = _eval('x = 10\nif x == 10 then\n  y = 1\nelse\n  y = 0\nend')
+        self.assertEqual(result["y"], 1)
+
+    def test_if_no_else(self):
+        result = _eval('x = 1\nif false then\n  x = 99\nend')
+        self.assertEqual(result["x"], 1)
+
+    def test_nested_if(self):
+        src = 'x = 5\nif x > 0 then\n  if x > 3 then\n    r = 2\n  else\n    r = 1\n  end\nend'
+        self.assertEqual(_eval(src)["r"], 2)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v2.0 — while loop
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestWhile(unittest.TestCase):
+
+    def test_while_basic(self):
+        src = 'i = 0\nwhile i < 5 do\n  i = i + 1\nend'
+        self.assertEqual(_eval(src)["i"], 5)
+
+    def test_while_sum(self):
+        src = 'i = 1\ns = 0\nwhile i <= 10 do\n  s = s + i\n  i = i + 1\nend'
+        self.assertEqual(_eval(src)["s"], 55)
+
+    def test_while_factorial(self):
+        src = 'n = 5\nf = 1\nwhile n > 1 do\n  f = f * n\n  n = n - 1\nend'
+        self.assertEqual(_eval(src)["f"], 120)
+
+    def test_while_zero_iterations(self):
+        result = _eval('x = 0\nwhile false do\n  x = 99\nend')
+        self.assertEqual(result["x"], 0)
+
+    def test_while_output(self):
+        out, _ = _run('i = 1\nwhile i <= 3 do\n  writeln i\n  i = i + 1\nend')
+        self.assertEqual(out, "1\n2\n3\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v2.0 — User-defined functions
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUserFunctions(unittest.TestCase):
+
+    def test_def_and_call(self):
+        result = _eval('def square(x) = x^2\ny = square(5)')
+        self.assertEqual(result["y"], 25)
+
+    def test_def_linear(self):
+        result = _eval('def double(x) = x * 2\ny = double(7)')
+        self.assertEqual(result["y"], 14)
+
+    def test_def_with_builtin(self):
+        result = _eval('def hyp(x) = sqrt(x^2 + x^2)\ny = hyp(3)')
+        self.assertAlmostEqual(result["y"], 3 * (2**0.5))
+
+    def test_def_scope_isolation(self):
+        # parameter 'x' should not leak into outer scope
+        result = _eval('x = 99\ndef f(x) = x + 1\ny = f(10)')
+        self.assertEqual(result["x"], 99)
+        self.assertEqual(result["y"], 11)
+
+    def test_undefined_function_raises(self):
+        with self.assertRaises((InterpreterError, SemanticError)):
+            _eval("y = unknown(5)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v2.0 — Semantic Analyzer
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSemanticAnalyzer(unittest.TestCase):
+
+    def test_undefined_variable_caught(self):
+        with self.assertRaises((InterpreterError, SemanticError)):
+            _eval("y = z + 1")
+
+    def test_undefined_function_caught(self):
+        with self.assertRaises((InterpreterError, SemanticError)):
+            _eval("y = ghost(3)")
+
+    def test_negate_bool_caught(self):
+        with self.assertRaises((InterpreterError, SemanticError)):
+            _eval("x = -true")
+
+    def test_valid_program_no_errors(self):
+        # Should not raise anything
+        _eval('x = 5\ny = x + 1')
+
+    def test_readn_defines_var(self):
+        # After readn, variable is defined — no semantic error
+        import io as _io
+        out = _io.StringIO()
+        inp = _io.StringIO("10\n")
+        from Y2MathInterpreter import Y2MathInterpreter
+        interp = Y2MathInterpreter(stdin=inp, stdout=out, stderr=_io.StringIO())
+        interp.run_source("readn n\ny = n * 2")
+        self.assertAlmostEqual(interp.get_variables()["y"], 20.0)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v2.0 — DFA Lexer new tokens
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestLexerV2(unittest.TestCase):
+
+    def _lex(self, src):
+        from generated.Y2ExpressionLexer import Y2ExpressionLexer, TOKEN_NAMES
+        toks = Y2ExpressionLexer(src).getAllTokens()
+        return [(TOKEN_NAMES[t.type], t.text) for t in toks]
+
+    def test_lex_true_false(self):
+        toks = self._lex("true false")
+        self.assertEqual(toks[0], ("TRUE",  "true"))
+        self.assertEqual(toks[1], ("FALSE", "false"))
+
+    def test_lex_eq_neq(self):
+        toks = self._lex("== !=")
+        self.assertEqual(toks[0][0], "EQ")
+        self.assertEqual(toks[1][0], "NEQ")
+
+    def test_lex_leq_geq(self):
+        toks = self._lex("<= >=")
+        self.assertEqual(toks[0][0], "LEQ")
+        self.assertEqual(toks[1][0], "GEQ")
+
+    def test_lex_keywords(self):
+        for kw in ["if","then","else","end","while","do","def","and","or","not"]:
+            toks = self._lex(kw)
+            self.assertEqual(toks[0][1], kw)
+
+    def test_lex_lt_gt_not_confused(self):
+        # Single < and > should NOT become LEQ/GEQ
+        toks = self._lex("< >")
+        self.assertEqual(toks[0][0], "LT")
+        self.assertEqual(toks[1][0], "GT")
 
 
 if __name__ == "__main__":

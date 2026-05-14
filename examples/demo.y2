@@ -1,76 +1,276 @@
-// examples/demo.y2
-// ─────────────────────────────────────────────────────────────────────────────
-// Y2 Math Interpreter — feature demonstration script
-// Run:  python main.py examples/demo.y2
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// demo.y2 — Y2 Math Interpreter v2.0 — Feature Showcase
+// Run: python main.py examples/demo.y2
+//      python visualizer_app.py  →  paste any block into the visualizer
+// ═══════════════════════════════════════════════════════════════════════════
 
-writeln "=== Y2 Math Interpreter Demo ==="
+
+// ───────────────────────────────────────────────────────────────────────────
+// 1. Basic arithmetic & operator precedence
+// ───────────────────────────────────────────────────────────────────────────
+writeln "═══ 1. Arithmetic ═══"
+
+a = 2 + 3 * 4          // precedence: * before +  → 14
+b = (2 + 3) * 4        // parentheses override     → 20
+c = 2 ^ 3 ^ 2          // right-assoc: 2^(3^2)    → 512
+d = 17 % 5             // modulo                   → 2
+
+write "2 + 3*4       = " writeln a
+write "(2+3)*4       = " writeln b
+write "2^3^2         = " writeln c
+write "17 % 5        = " writeln d
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// 2. Built-in math functions
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 2. Built-in functions ═══"
+
+write "sqrt(144)     = " writeln sqrt(144)
+write "sin(0)        = " writeln sin(0)
+write "cos(0)        = " writeln cos(0)
+write "abs(-42)      = " writeln abs(-42)
+write "log(1)        = " writeln log(1)
+write "exp(1)        = " writeln exp(1)
+write "ceil(3.2)     = " writeln ceil(3.2)
+write "floor(3.9)    = " writeln floor(3.9)
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// 3. Boolean literals & logical operators
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 3. Boolean & logical ═══"
+
+p = true
+q = false
+
+write "true and false  = " writeln p and q
+write "true or  false  = " writeln p or q
+write "not true        = " writeln not p
+write "not false       = " writeln not q
+write "true and not false = " writeln p and not q
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// 4. Comparison operators
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 4. Comparison ═══"
+
+x = 7
+write "7 == 7   = " writeln x == 7
+write "7 != 8   = " writeln x != 8
+write "7 <  10  = " writeln x < 10
+write "7 >  10  = " writeln x > 10
+write "7 <= 7   = " writeln x <= 7
+write "7 >= 8   = " writeln x >= 8
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// 5. if / else
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 5. if / else ═══"
+
+score = 85
+
+if score >= 90 then
+  writeln "Grade: A"
+else
+  if score >= 75 then
+    writeln "Grade: B"
+  else
+    if score >= 60 then
+      writeln "Grade: C"
+    else
+      writeln "Grade: F"
+    end
+  end
+end
+
+// nested condition with logical operator
+age = 20
+has_id = true
+
+if age >= 18 and has_id then
+  writeln "Access granted"
+else
+  writeln "Access denied"
+end
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// 6. while loop — countdown
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 6. while — countdown ═══"
+
+n = 5
+while n > 0 do
+  write n
+  write " "
+  n = n - 1
+end
 writeln ""
 
-// ── Basic arithmetic ──────────────────────────────────────────────────────────
-writeln "-- Arithmetic --"
-x = 2 + 3 * 4
-write "2 + 3 * 4 = "
-writeln x
 
-x = (2 + 3) * 4
-write "(2 + 3) * 4 = "
-writeln x
+// ───────────────────────────────────────────────────────────────────────────
+// 7. while loop — sum 1..100
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 7. Sum 1 to 100 ═══"
 
-x = 2 ^ 10
-write "2 ^ 10 = "
-writeln x
+i = 1
+total = 0
+while i <= 100 do
+  total = total + i
+  i = i + 1
+end
+write "Sum(1..100) = " writeln total     // 5050
 
+
+// ───────────────────────────────────────────────────────────────────────────
+// 8. while loop — factorial n!
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 8. Factorial ═══"
+
+n = 10
+fact = 1
+i = 1
+while i <= n do
+  fact = fact * i
+  i = i + 1
+end
+write "10!  = " writeln fact             // 3628800
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// 9. while loop — Fibonacci sequence (first 10 terms)
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 9. Fibonacci (first 10 terms) ═══"
+
+a = 0
+b = 1
+count = 0
+while count < 10 do
+  write a
+  write " "
+  tmp = a + b
+  a = b
+  b = tmp
+  count = count + 1
+end
 writeln ""
 
-// ── Variables ─────────────────────────────────────────────────────────────────
-writeln "-- Variables --"
-a = 12
-b = 7
-sum = a + b
-diff = a - b
-prod = a * b
-write "a=12, b=7   sum="
-write sum
-write "  diff="
-write diff
-write "  prod="
-writeln prod
+
+// ───────────────────────────────────────────────────────────────────────────
+// 10. User-defined functions
+// ───────────────────────────────────────────────────────────────────────────
 writeln ""
+writeln "═══ 10. User-defined functions ═══"
 
-// ── Built-in functions ────────────────────────────────────────────────────────
-writeln "-- Functions --"
-write "sqrt(144) = "
-writeln sqrt(144)
+def square(x)   = x ^ 2
+def cube(x)     = x ^ 3
+def double(x)   = x * 2
+def celcius(f)  = (f - 32) * 5 / 9
 
-write "sin(0)   = "
-writeln sin(0)
+write "square(7)       = " writeln square(7)       // 49
+write "cube(4)         = " writeln cube(4)          // 64
+write "double(21)      = " writeln double(21)       // 42
+write "98.6°F in °C    = " writeln celcius(98.6)    // 37
 
-write "cos(0)   = "
-writeln cos(0)
 
-write "abs(-42) = "
-writeln abs(-42)
-
-write "log(1)   = "
-writeln log(1)
-
-write "exp(1)   = "
-writeln exp(1)
+// ───────────────────────────────────────────────────────────────────────────
+// 11. Quadratic formula  x = (−b ± √(b²−4ac)) / 2a
+// ───────────────────────────────────────────────────────────────────────────
 writeln ""
+writeln "═══ 11. Quadratic formula: x² − 5x + 6 = 0 ═══"
 
-// ── Quadratic formula  x = [-b ± sqrt(b²-4ac)] / 2a ─────────────────────────
-writeln "-- Quadratic formula: x^2 - 5x + 6 = 0 --"
 qa = 1
 qb = -5
 qc = 6
-disc = qb^2 - 4*qa*qc
-x1 = (-qb + sqrt(disc)) / (2*qa)
-x2 = (-qb - sqrt(disc)) / (2*qa)
-write "x1 = "
-writeln x1
-write "x2 = "
-writeln x2
-writeln ""
+disc = qb ^ 2 - 4 * qa * qc
+x1 = (-qb + sqrt(disc)) / (2 * qa)
+x2 = (-qb - sqrt(disc)) / (2 * qa)
+write "x1 = " writeln x1    // 3
+write "x2 = " writeln x2    // 2
 
-writeln "=== End of Demo ==="
+
+// ───────────────────────────────────────────────────────────────────────────
+// 12. Circle — area and circumference
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 12. Circle (r = 5) ═══"
+
+pi = 3.14159265358979
+r  = 5
+area  = pi * r ^ 2
+circ  = 2 * pi * r
+write "Area          = " writeln area
+write "Circumference = " writeln circ
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// 13. Collatz conjecture — steps to reach 1
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 13. Collatz conjecture (n = 27) ═══"
+
+n = 27
+steps = 0
+while n != 1 do
+  if n % 2 == 0 then
+    n = n / 2
+  else
+    n = n * 3 + 1
+  end
+  steps = steps + 1
+end
+write "Steps to reach 1: " writeln steps    // 111
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// 14. Prime check (trial division)
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 14. Prime check ═══"
+
+def is_small_prime(n) = n > 1 and n != 4 and n != 6 and n != 8 and n != 9
+
+/* Full trial-division for a specific candidate.
+   Y2 has no break/return so we track a flag. */
+candidate = 97
+is_prime = true
+d = 2
+limit = floor(sqrt(candidate))
+
+while d <= limit do
+  if candidate % d == 0 then
+    is_prime = false
+  end
+  d = d + 1
+end
+
+write "97 is prime: " writeln is_prime    // true
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// 15. Compound interest  A = P(1 + r/n)^(nt)
+// ───────────────────────────────────────────────────────────────────────────
+writeln ""
+writeln "═══ 15. Compound interest ═══"
+
+principal = 1000
+rate      = 0.05      // 5% annual
+n_comp    = 12        // compounded monthly
+years     = 10
+
+amount = principal * (1 + rate / n_comp) ^ (n_comp * years)
+write "P=1000, r=5%, 12×/yr, 10yr = " writeln amount   // ≈ 1647.01
+
+writeln ""
+writeln "═══ Done ═══"

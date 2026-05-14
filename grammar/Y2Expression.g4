@@ -1,99 +1,108 @@
 /**
- * Y2Expression.g4
- * ANTLR4 Grammar for Y2 Math Interpreter
+ * Y2Expression.g4  — v2.0
+ * ANTLR4 Grammar for extended Y2 Math Interpreter
  *
- * Inspired by YinYang's Y2 Math Interpreter (2011):
- *   https://yinyangit.wordpress.com/2011/03/27/...
+ * New in v2.0:
+ *   - Boolean literals: true false
+ *   - Comparison operators: == != < > <= >=
+ *   - Logical operators: and or not
+ *   - Control flow: if…then…else…end   while…do…end
+ *   - User-defined functions: def f(x) = expr
+ *   - DFA-based lexer (transition table, not if/else)
+ *   - Error recovery: parser collects errors instead of crashing
+ *   - Semantic Analysis pass before evaluation
  *
- * Supports:
- *   - Arithmetic: +  -  *  /  %  ^
- *   - Functions:  sqrt  sin  cos  tan  abs  log  exp
- *   - Variables:  assignment and lookup
- *   - Commands:   write  writeln  readn  run  exit
- *   - Comparison: ==  !=  <  >  <=  >=   (for future use)
- *
- * Generate Python runtime code with:
+ * Generate with:
  *   antlr4 -Dlanguage=Python3 -visitor Y2Expression.g4
  */
 
 grammar Y2Expression;
 
-// ─────────────────────────────────────────────
-// Parser Rules
-// ─────────────────────────────────────────────
+// ── Parser Rules ─────────────────────────────────────────────────────────────
 
-/** Top-level program: one or more statements */
-program
-    : statement+ EOF
-    ;
+program     : statement+ EOF ;
 
-/** A single line of input */
 statement
-    : assignment NEWLINE?        # AssignStmt
-    | command    NEWLINE?        # CmdStmt
-    | NEWLINE                    # EmptyLine
+    : funcDef   NEWLINE?   # FuncDefStmt
+    | ifStmt    NEWLINE?   # IfStmt
+    | whileStmt NEWLINE?   # WhileStmt
+    | assignment NEWLINE?  # AssignStmt
+    | command   NEWLINE?   # CmdStmt
+    | NEWLINE              # EmptyLine
     ;
 
-/** Variable assignment:  name = expr */
-assignment
-    : IDENTIFIER ASSIGN expr
-    ;
+funcDef     : DEF IDENTIFIER LPAREN IDENTIFIER RPAREN ASSIGN expr ;
 
-/** Built-in commands */
+ifStmt      : IF expr THEN block (ELSE block)? END ;
+
+whileStmt   : WHILE expr DO block END ;
+
+block       : statement* ;
+
+assignment  : IDENTIFIER ASSIGN expr ;
+
 command
-    : WRITE   writeArg           # WriteCmd
-    | WRITELN writeArg           # WritelnCmd
-    | READN   IDENTIFIER         # ReadnCmd
-    | RUN     STRING_LITERAL     # RunCmd
-    | EXIT                       # ExitCmd
+    : (WRITE | WRITELN) writeArg   # WriteCmd
+    | READN IDENTIFIER             # ReadnCmd
+    | RUN STRING_LITERAL           # RunCmd
+    | EXIT                         # ExitCmd
     ;
 
-writeArg
-    : STRING_LITERAL             # WriteString
-    | expr                       # WriteExpr
-    ;
+writeArg    : STRING_LITERAL | expr ;
 
-/** Expression hierarchy (lowest to highest precedence) */
-expr
-    : expr (PLUS | MINUS) term   # AddSub
-    | term                       # PassTerm
-    ;
+// ── Expression hierarchy ─────────────────────────────────────────────────────
 
-term
-    : term (STAR | SLASH | PERCENT) power   # MulDiv
-    | power                                 # PassPower
-    ;
+expr        : orExpr ;
 
-power
-    : unary CARET power          # PowerOp   // right-associative
-    | unary                      # PassUnary
-    ;
+orExpr      : andExpr  (OR  andExpr)* ;
+andExpr     : notExpr  (AND notExpr)* ;
+notExpr     : NOT notExpr | cmpExpr ;
 
-unary
-    : MINUS unary                # Negate
-    | primary                    # PassPrimary
-    ;
+cmpExpr     : addExpr ((EQ|NEQ|LT|GT|LEQ|GEQ) addExpr)? ;
+
+addExpr     : mulExpr  ((PLUS|MINUS) mulExpr)* ;
+mulExpr     : powExpr  ((STAR|SLASH|PERCENT) powExpr)* ;
+powExpr     : unary (CARET powExpr)? ;       // right-associative
+
+unary       : MINUS unary | primary ;
 
 primary
-    : NUMBER                     # NumberLit
-    | IDENTIFIER LPAREN expr RPAREN  # FuncCall
-    | IDENTIFIER                 # VarRef
-    | LPAREN expr RPAREN         # Grouped
+    : NUMBER
+    | TRUE | FALSE
+    | IDENTIFIER LPAREN expr RPAREN     // function call (built-in or user)
+    | IDENTIFIER                        // variable reference
+    | LPAREN expr RPAREN
     ;
 
-// ─────────────────────────────────────────────
-// Lexer Rules
-// ─────────────────────────────────────────────
+// ── Lexer Rules ───────────────────────────────────────────────────────────────
 
-// Keywords (must come before IDENTIFIER)
-WRITE   : [Ww][Rr][Ii][Tt][Ee] ;
-WRITELN : [Ww][Rr][Ii][Tt][Ee][Ll][Nn] ;
-READN   : [Rr][Ee][Aa][Dd][Nn] ;
-RUN     : [Rr][Uu][Nn] ;
-EXIT    : [Ee][Xx][Ii][Tt] ;
+// Keywords
+DEF     : 'def' ;
+IF      : 'if' ;
+THEN    : 'then' ;
+ELSE    : 'else' ;
+END     : 'end' ;
+WHILE   : 'while' ;
+DO      : 'do' ;
+TRUE    : 'true' ;
+FALSE   : 'false' ;
+AND     : 'and' ;
+OR      : 'or' ;
+NOT     : 'not' ;
+WRITE   : 'write' ;
+WRITELN : 'writeln' ;
+READN   : 'readn' ;
+RUN     : 'run' ;
+EXIT    : 'exit' ;
 
 // Operators
 ASSIGN  : '=' ;
+EQ      : '==' ;
+NEQ     : '!=' ;
+LT      : '<' ;
+GT      : '>' ;
+LEQ     : '<=' ;
+GEQ     : '>=' ;
 PLUS    : '+' ;
 MINUS   : '-' ;
 STAR    : '*' ;
@@ -104,35 +113,14 @@ LPAREN  : '(' ;
 RPAREN  : ')' ;
 
 // Literals
-NUMBER
-    : DIGIT+ ('.' DIGIT+)?
-    ;
+NUMBER          : DIGIT+ ('.' DIGIT+)? ;
+STRING_LITERAL  : '"' (~["\r\n])* '"' ;
+IDENTIFIER      : [a-zA-Z_][a-zA-Z0-9_]* ;
+NEWLINE         : [\r\n]+ ;
 
-STRING_LITERAL
-    : '"' (~["\r\n])* '"'
-    ;
+// Skip
+WS          : [ \t]+          -> skip ;
+LINE_COMMENT: '//' ~[\r\n]*   -> skip ;
+BLOCK_COMMENT: '/*' .*? '*/'  -> skip ;
 
-IDENTIFIER
-    : [a-zA-Z_] [a-zA-Z0-9_]*
-    ;
-
-NEWLINE
-    : [\r\n]+
-    ;
-
-// Skip whitespace (not newlines, those are significant)
-WS
-    : [ \t]+ -> skip
-    ;
-
-// Skip comments  //  ...  or  /* ... */
-LINE_COMMENT
-    : '//' ~[\r\n]* -> skip
-    ;
-
-BLOCK_COMMENT
-    : '/*' .*? '*/' -> skip
-    ;
-
-// Fragments
 fragment DIGIT : [0-9] ;

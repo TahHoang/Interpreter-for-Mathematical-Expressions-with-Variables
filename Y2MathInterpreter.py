@@ -1,27 +1,16 @@
 """
-Y2MathInterpreter.py
-────────────────────
-Main interpreter for the Y2 Math language.
+Y2MathInterpreter.py — v2.0
+─────────────────────────────
+Full interpreter for extended Y2 language.
 
-Architecture (mirrors what the blog post describes, ported to Python
-and upgraded to use ANTLR4 + Visitor pattern):
-
-    Source text
-        │  Lexer (Y2ExpressionLexer)
-        ▼
-    Token stream
-        │  Parser (Y2ExpressionParser)
-        ▼
-    AST
-        │  Evaluator(Y2ExpressionVisitor)
-        ▼
-    Side effects + values
-
-Supports:
-    Variables       x = 3 * 4
-    Arithmetic      + - * / % ^
-    Functions       sqrt sin cos tan abs log exp
-    Commands        write  writeln  readn  run  exit
+New in v2.0:
+  - Boolean type: true / false
+  - Comparison operators: == != < > <= >=
+  - Logical operators: and / or / not
+  - if … then … else … end
+  - while … do … end  (with iteration limit guard)
+  - User-defined functions: def f(x) = expr
+  - Semantic Analysis pass (SemanticAnalyzer) runs before evaluation
 """
 
 from __future__ import annotations
@@ -29,229 +18,413 @@ from __future__ import annotations
 import math
 import os
 import sys
-from typing import Dict, Optional, IO
+import io
+from typing import Dict, Any, List
 
-# Ensure the directory containing this file is always on sys.path,
-# so `generated` is importable regardless of where Python is invoked from.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from generated import (
-    Y2ExpressionLexer,
-    Y2ExpressionParser,
-    Y2ExpressionVisitor,
-    LexerError,
-    ParseError,
-)
-from generated.Y2ExpressionAST import (
-    ProgramNode, AssignmentNode, WriteCmdNode, WriteStringNode,
-    ReadnCmdNode, RunCmdNode, ExitCmdNode,
-    BinaryOpNode, UnaryMinusNode, NumberNode, VarRefNode, FuncCallNode,
-)
+from generated import LexerError
+from generated.Y2ExpressionLexer import Y2ExpressionLexer
+from generated.Y2ExpressionParser import Y2ExpressionParser, ParseException
+from generated.Y2ExpressionVisitor import Y2ExpressionVisitor
+from generated.Y2ExpressionAST import *
 
-# Sentinel: raised internally to exit the REPL cleanly
-class _ExitSignal(Exception):
-    pass
+# ── Sentinel signals ──────────────────────────────────────────────────────────
+class _ExitSignal(Exception): pass
 
 
-class InterpreterError(Exception):
-    pass
+class InterpreterError(Exception): pass
+
+
+class SemanticError(Exception): pass
 
 
 # ── Built-in math functions ───────────────────────────────────────────────────
-
-_BUILTINS: Dict[str, object] = {
-    "sqrt": math.sqrt,
-    "sin":  math.sin,
-    "cos":  math.cos,
-    "tan":  math.tan,
-    "abs":  abs,
-    "log":  math.log,    # natural log
-    "exp":  math.exp,
-    "ceil": math.ceil,
-    "floor":math.floor,
+_BUILTINS: Dict[str, Any] = {
+    "sqrt": math.sqrt, "sin": math.sin, "cos": math.cos,
+    "tan":  math.tan,  "abs": abs,      "log": math.log,
+    "exp":  math.exp,  "ceil": math.ceil, "floor": math.floor,
 }
 
+_MAX_ITERATIONS = 100_000   # while-loop guard
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Semantic Analyser — Visitor pass that runs BEFORE evaluation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SemanticAnalyzer(Y2ExpressionVisitor):
+    """
+    Checks the AST for semantic errors without executing anything:
+      - Variables used before being assigned
+      - Calls to unknown functions
+      - Type mismatches (numeric op applied to boolean literal, etc.)
+
+    Collects all errors rather than stopping at the first one.
+    """
+
+    def __init__(self) -> None:
+        self.errors: List[str] = []
+        self._vars:  set[str]  = set()   # variables seen so far (assigned)
+        self._funcs: set[str]  = set()   # user-defined functions
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _err(self, msg: str) -> None:
+        self.errors.append(msg)
+
+    # ── Visitor implementations ───────────────────────────────────────────────
+
+    def visitProgram(self, node: ProgramNode):
+        for s in node.statements:
+            s.accept(self)
+
+    def visitAssignment(self, node: AssignmentNode):
+        node.expr.accept(self)
+        self._vars.add(node.name)
+
+    def visitWriteCmd(self, node: WriteCmdNode):
+        node.arg.accept(self)
+
+    def visitWriteString(self, node: WriteStringNode):
+        pass
+
+    def visitReadnCmd(self, node: ReadnCmdNode):
+        self._vars.add(node.name)   # readn defines the variable
+
+    def visitRunCmd(self, node: RunCmdNode):
+        if not os.path.isfile(node.filename):
+            self._err(f"run: file not found: '{node.filename}'")
+
+    def visitExitCmd(self, node: ExitCmdNode):
+        pass
+
+    def visitIf(self, node: IfNode):
+        node.cond.accept(self)
+        for s in node.then_block: s.accept(self)
+        for s in node.else_block: s.accept(self)
+
+    def visitWhile(self, node: WhileNode):
+        node.cond.accept(self)
+        for s in node.block: s.accept(self)
+
+    def visitFuncDef(self, node: FuncDefNode):
+        # Analyse body with param in scope
+        self._vars.add(node.param)
+        node.body.accept(self)
+        self._vars.discard(node.param)
+        self._funcs.add(node.name)
+
+    def visitBinaryOp(self, node: BinaryOpNode):
+        node.left.accept(self)
+        node.right.accept(self)
+
+    def visitCompare(self, node: CompareNode):
+        node.left.accept(self)
+        node.right.accept(self)
+
+    def visitLogical(self, node: LogicalNode):
+        node.left.accept(self)
+        node.right.accept(self)
+
+    def visitNot(self, node: NotNode):
+        node.operand.accept(self)
+
+    def visitUnaryMinus(self, node: UnaryMinusNode):
+        node.operand.accept(self)
+        if isinstance(node.operand, BoolNode):
+            self._err("Semantic: cannot negate a boolean literal")
+
+    def visitNumber(self, node: NumberNode): pass
+
+    def visitBool(self, node: BoolNode): pass
+
+    def visitVarRef(self, node: VarRefNode):
+        if node.name not in self._vars:
+            self._err(f"Semantic: variable '{node.name}' used before assignment")
+
+    def visitFuncCall(self, node: FuncCallNode):
+        if node.name not in _BUILTINS:
+            self._err(f"Semantic: unknown built-in function '{node.name}'")
+        node.arg.accept(self)
+
+    def visitUserFuncCall(self, node: UserFuncCallNode):
+        if node.name not in self._funcs:
+            self._err(f"Semantic: function '{node.name}' not defined")
+        node.arg.accept(self)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Main Interpreter
+# ═══════════════════════════════════════════════════════════════════════════════
 
 class Y2MathInterpreter(Y2ExpressionVisitor):
     """
-    Walks the AST produced by Y2ExpressionParser and evaluates it.
-    Inherits from Y2ExpressionVisitor (the generated Visitor base).
+    Evaluates an AST produced by Y2ExpressionParser.
 
-    The symbol table (_variables) is a simple dict[str, float], exactly
-    as described in the original Y2 Math Interpreter blog post.
+    Symbol table stores both float and bool values.
+    User-defined functions are stored separately in _functions.
     """
 
     def __init__(
         self,
-        stdin:  IO = sys.stdin,
-        stdout: IO = sys.stdout,
-        stderr: IO = sys.stderr,
+        stdin:  io.TextIOBase = sys.stdin,
+        stdout: io.TextIOBase = sys.stdout,
+        stderr: io.TextIOBase = sys.stderr,
         *,
         allow_run: bool = True,
-        _depth: int = 0,           # recursion guard for 'run'
+        _depth: int = 0,
     ) -> None:
-        self._variables: Dict[str, float] = {}
-        self._stdin  = stdin
-        self._stdout = stdout
-        self._stderr = stderr
+        self._variables: Dict[str, Any]          = {}
+        self._functions: Dict[str, FuncDefNode]  = {}
+        self._stdin   = stdin
+        self._stdout  = stdout
+        self._stderr  = stderr
         self._allow_run = allow_run and (_depth == 0)
-        self._depth  = _depth
+        self._depth   = _depth
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def run_source(self, source: str) -> None:
-        """Lex, parse, and evaluate a complete source string."""
+    def run_source(self, source: str, *, semantic_check: bool = True) -> None:
         lexer  = Y2ExpressionLexer(source)
         tokens = lexer.getAllTokens()
+
         parser = Y2ExpressionParser(tokens)
         tree   = parser.program()
+
+        # Report parse errors collected during error recovery
+        for err in parser.errors:
+            self._stderr.write(f"Parse warning: {err}\n")
+
+        # Semantic analysis pass
+        if semantic_check:
+            sa = SemanticAnalyzer()
+            # Pre-populate known variables so cross-statement checks work
+            sa._vars  = set(self._variables.keys())
+            sa._funcs = set(self._functions.keys())
+            tree.accept(sa)
+            if sa.errors:
+                raise SemanticError("\n".join(sa.errors))
+
         tree.accept(self)
 
     def run_file(self, path: str) -> None:
-        """Execute a script file."""
         with open(path, encoding="utf-8") as fh:
-            source = fh.read()
-        self.run_source(source)
+            self.run_source(fh.read())
 
     def run_line(self, line: str) -> None:
-        """Evaluate a single line (REPL use)."""
         line = line.strip()
-        if not line:
-            return
-        self.run_source(line)
+        if line:
+            self.run_source(line)
 
     def repl(self) -> None:
-        """Interactive read-eval-print loop."""
-        self._stdout.write("Y2 Math Interpreter  (type 'exit' to quit)\n")
-        self._stdout.write("Operators: + - * / % ^    Functions: sqrt sin cos tan abs log exp\n")
-        self._stdout.write("Commands:  write  writeln  readn  run  exit\n\n")
+        self._stdout.write("Y2 Math Interpreter v2.0\n")
+        self._stdout.write("Operators: + - * / % ^   Comparison: == != < > <= >=\n")
+        self._stdout.write("Logic: and or not   Bool: true false\n")
+        self._stdout.write("Control: if…then…else…end   while…do…end\n")
+        self._stdout.write("Functions: def f(x) = expr   sqrt sin cos tan abs log exp\n\n")
         while True:
             try:
                 self._stdout.write(">> ")
                 self._stdout.flush()
                 line = self._stdin.readline()
-                if not line:           # EOF
-                    break
-                line = line.rstrip("\r\n")
                 if not line:
-                    continue
+                    break
                 try:
-                    self.run_line(line)
+                    self.run_line(line.rstrip("\r\n"))
                 except _ExitSignal:
                     self._stdout.write("Goodbye!\n")
                     break
-                except (LexerError, ParseError, InterpreterError) as exc:
+                except (LexerError, SemanticError, InterpreterError) as exc:
                     self._stderr.write(f"Error: {exc}\n")
             except KeyboardInterrupt:
                 self._stdout.write("\nInterrupted.\n")
                 break
 
-    # ── Visitor implementations ───────────────────────────────────────────────
+    def get_variables(self) -> Dict[str, Any]:
+        return dict(self._variables)
+
+    # ── Visitor: program & statements ────────────────────────────────────────
 
     def visitProgram(self, node: ProgramNode):
         for stmt in node.statements:
             stmt.accept(self)
 
     def visitAssignment(self, node: AssignmentNode):
-        value = node.expr.accept(self)
-        self._set_var(node.name, value)
+        self._variables[node.name] = node.expr.accept(self)
 
     def visitWriteCmd(self, node: WriteCmdNode):
-        text = node.arg.accept(self)
+        val = node.arg.accept(self)
+        text = _fmt(val)
         if node.newline:
-            self._stdout.write(str(text) + "\n")
+            self._stdout.write(text + "\n")
         else:
-            self._stdout.write(str(text))
+            self._stdout.write(text)
         self._stdout.flush()
 
     def visitWriteString(self, node: WriteStringNode) -> str:
         return node.value
 
     def visitReadnCmd(self, node: ReadnCmdNode):
-        self._stdout.write(f"")
-        self._stdout.flush()
         raw = self._stdin.readline().strip()
         try:
-            value = float(raw)
+            self._variables[node.name] = float(raw)
         except ValueError:
-            raise InterpreterError(
-                f"readn: '{raw}' is not a valid number"
-            )
-        self._set_var(node.name, value)
+            raise InterpreterError(f"readn: '{raw}' is not a valid number")
 
     def visitRunCmd(self, node: RunCmdNode):
         if not self._allow_run:
-            # Mirrors the blog's StackOverflow-prevention: disable
-            # nested 'run' commands to avoid infinite recursion.
             return
-        if not os.path.isfile(node.filename):
-            raise InterpreterError(f"run: file not found: '{node.filename}'")
         sub = Y2MathInterpreter(
-            stdin=self._stdin,
-            stdout=self._stdout,
-            stderr=self._stderr,
-            allow_run=False,     # disable further nesting (depth > 0)
-            _depth=self._depth + 1,
+            stdin=self._stdin, stdout=self._stdout, stderr=self._stderr,
+            allow_run=False, _depth=self._depth + 1,
         )
-        # Share the variable table with the sub-interpreter
         sub._variables = self._variables
+        sub._functions = self._functions
         sub.run_file(node.filename)
 
     def visitExitCmd(self, node: ExitCmdNode):
         raise _ExitSignal()
 
-    # ── Expression visitors ───────────────────────────────────────────────────
+    def visitFuncDef(self, node: FuncDefNode):
+        """Store the function definition in the function table."""
+        self._functions[node.name] = node
+
+    def visitIf(self, node: IfNode):
+        cond = node.cond.accept(self)
+        if _truthy(cond):
+            for stmt in node.then_block:
+                stmt.accept(self)
+        else:
+            for stmt in node.else_block:
+                stmt.accept(self)
+
+    def visitWhile(self, node: WhileNode):
+        iterations = 0
+        while _truthy(node.cond.accept(self)):
+            for stmt in node.block:
+                stmt.accept(self)
+            iterations += 1
+            if iterations >= _MAX_ITERATIONS:
+                raise InterpreterError(
+                    f"while loop exceeded {_MAX_ITERATIONS} iterations — "
+                    "possible infinite loop"
+                )
+
+    # ── Visitor: expressions ─────────────────────────────────────────────────
 
     def visitBinaryOp(self, node: BinaryOpNode) -> float:
         left  = node.left.accept(self)
         right = node.right.accept(self)
         op    = node.op
-        if op == "+":  return left + right
-        if op == "-":  return left - right
-        if op == "*":  return left * right
+        _require_num(left,  op)
+        _require_num(right, op)
+        if op == "+": return left + right
+        if op == "-": return left - right
+        if op == "*": return left * right
         if op == "/":
-            if right == 0:
-                raise InterpreterError("Division by zero")
+            if right == 0: raise InterpreterError("Division by zero")
             return left / right
         if op == "%":
-            if right == 0:
-                raise InterpreterError("Modulo by zero")
+            if right == 0: raise InterpreterError("Modulo by zero")
             return left % right
-        if op == "^":  return left ** right
+        if op == "^": return left ** right
         raise InterpreterError(f"Unknown operator: {op!r}")
 
+    def visitCompare(self, node: CompareNode) -> bool:
+        left  = node.left.accept(self)
+        right = node.right.accept(self)
+        op    = node.op
+        if op == "==": return left == right
+        if op == "!=": return left != right
+        if op == "<":  return left <  right
+        if op == ">":  return left >  right
+        if op == "<=": return left <= right
+        if op == ">=": return left >= right
+        raise InterpreterError(f"Unknown comparison: {op!r}")
+
+    def visitLogical(self, node: LogicalNode) -> bool:
+        if node.op == "or":
+            return _truthy(node.left.accept(self)) or _truthy(node.right.accept(self))
+        if node.op == "and":
+            return _truthy(node.left.accept(self)) and _truthy(node.right.accept(self))
+        raise InterpreterError(f"Unknown logical op: {node.op!r}")
+
+    def visitNot(self, node: NotNode) -> bool:
+        return not _truthy(node.operand.accept(self))
+
     def visitUnaryMinus(self, node: UnaryMinusNode) -> float:
-        return -node.operand.accept(self)
+        val = node.operand.accept(self)
+        _require_num(val, "unary -")
+        return -val
 
     def visitNumber(self, node: NumberNode) -> float:
         return node.value
 
-    def visitVarRef(self, node: VarRefNode) -> float:
-        return self._get_var(node.name)
+    def visitBool(self, node: BoolNode) -> bool:
+        return node.value
+
+    def visitVarRef(self, node: VarRefNode):
+        if node.name not in self._variables:
+            raise InterpreterError(f"Undefined variable '{node.name}'")
+        return self._variables[node.name]
 
     def visitFuncCall(self, node: FuncCallNode) -> float:
         fn = _BUILTINS.get(node.name)
         if fn is None:
-            raise InterpreterError(
-                f"Unknown function '{node.name}'. "
-                f"Available: {', '.join(_BUILTINS)}"
-            )
+            raise InterpreterError(f"Unknown built-in '{node.name}'")
         arg = node.arg.accept(self)
+        _require_num(arg, node.name + "()")
         try:
             return fn(arg)
         except ValueError as exc:
             raise InterpreterError(f"{node.name}({arg}): {exc}") from exc
 
-    # ── Symbol table helpers ──────────────────────────────────────────────────
+    def visitUserFuncCall(self, node: UserFuncCallNode):
+        fdef = self._functions.get(node.name)
+        if fdef is None:
+            raise InterpreterError(f"Undefined function '{node.name}'")
+        arg_val = node.arg.accept(self)
+        # Evaluate body in a temporary scope with the parameter bound
+        saved = self._variables.get(fdef.param, _MISSING)
+        self._variables[fdef.param] = arg_val
+        result = fdef.body.accept(self)
+        # Restore previous scope
+        if saved is _MISSING:
+            self._variables.pop(fdef.param, None)
+        else:
+            self._variables[fdef.param] = saved
+        return result
 
-    def _get_var(self, name: str) -> float:
-        if name not in self._variables:
-            raise InterpreterError(f"Undefined variable '{name}'")
-        return self._variables[name]
 
-    def _set_var(self, name: str, value: float) -> None:
-        self._variables[name] = value
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-    def get_variables(self) -> Dict[str, float]:
-        """Read-only snapshot of the symbol table (useful for debugging)."""
-        return dict(self._variables)
+_MISSING = object()
+
+
+def _truthy(val) -> bool:
+    """Both booleans and numbers are valid conditions."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return val != 0
+    return bool(val)
+
+
+def _require_num(val, op: str) -> None:
+    if isinstance(val, bool):
+        raise InterpreterError(
+            f"Operator '{op}' requires a number, got boolean"
+        )
+    if not isinstance(val, (int, float)):
+        raise InterpreterError(
+            f"Operator '{op}' requires a number, got {type(val).__name__}"
+        )
+
+
+def _fmt(val) -> str:
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    if isinstance(val, float):
+        return str(int(val)) if val == int(val) else f"{val:.10g}"
+    return str(val)

@@ -1,40 +1,18 @@
 """
-visualizer/tracing_interpreter.py
-───────────────────────────────────
-Subclass của Y2MathInterpreter — override các visitXxx để
-ghi lại từng bước tính toán vào self.steps.
-
-Mỗi step có dạng:
-{
-    "phase":  "eval" | "assign" | "output" | "func",
-    "expr":   "3 + 4",          ← biểu thức đang tính
-    "result": 7.0,              ← kết quả
-    "note":   "lưu vào x"       ← ghi chú thêm (tùy)
-}
+visualizer/tracing_interpreter.py  — v2.0
+───────────────────────────────────────────
+Subclass of Y2MathInterpreter — records every evaluation step.
+Now handles all v2.0 nodes: if, while, compare, logical, user functions.
 """
 
 import sys, os, io
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from Y2MathInterpreter import Y2MathInterpreter
-from generated.Y2ExpressionAST import (
-    BinaryOpNode, UnaryMinusNode, FuncCallNode,
-    AssignmentNode, WriteCmdNode, WriteStringNode,
-)
-
-
-def _fmt(n) -> str:
-    """Định dạng số: bỏ .0 nếu là số nguyên."""
-    if isinstance(n, float):
-        return str(int(n)) if n == int(n) else f"{n:.6g}"
-    return str(n)
+from Y2MathInterpreter import Y2MathInterpreter, _fmt, _truthy
+from generated.Y2ExpressionAST import *
 
 
 class TracingInterpreter(Y2MathInterpreter):
-    """
-    Ghi lại từng bước của quá trình evaluate để hiển thị trên UI.
-    Dùng cho Compiler Visualizer, không dùng cho REPL thường.
-    """
 
     def __init__(self):
         out = io.StringIO()
@@ -44,67 +22,89 @@ class TracingInterpreter(Y2MathInterpreter):
         self._err_buf = err
         self.steps: list[dict] = []
 
-    # ── Override expression visitors ──────────────────────────────────────────
+    def _log(self, phase: str, expr: str, result, note: str = ""):
+        self.steps.append({"phase": phase, "expr": expr,
+                            "result": _fmt(result), "note": note})
 
-    def visitBinaryOp(self, node: BinaryOpNode) -> float:
+    # ── Expression visitors ───────────────────────────────────────────────────
+
+    def visitBinaryOp(self, node: BinaryOpNode):
         left  = node.left.accept(self)
         right = node.right.accept(self)
-
         result = super().visitBinaryOp(node)
-
-        self.steps.append({
-            "phase":  "eval",
-            "expr":   f"{_fmt(left)} {node.op} {_fmt(right)}",
-            "result": result,
-            "note":   "",
-        })
+        self._log("eval", f"{_fmt(left)} {node.op} {_fmt(right)}", result)
         return result
 
-    def visitUnaryMinus(self, node: UnaryMinusNode) -> float:
+    def visitCompare(self, node: CompareNode):
+        left  = node.left.accept(self)
+        right = node.right.accept(self)
+        result = super().visitCompare(node)
+        self._log("compare", f"{_fmt(left)} {node.op} {_fmt(right)}", result)
+        return result
+
+    def visitLogical(self, node: LogicalNode):
+        result = super().visitLogical(node)
+        self._log("logical", node.op, result)
+        return result
+
+    def visitNot(self, node: NotNode):
+        result = super().visitNot(node)
+        self._log("logical", "not", result)
+        return result
+
+    def visitUnaryMinus(self, node: UnaryMinusNode):
         operand = node.operand.accept(self)
-        result  = -operand
-        self.steps.append({
-            "phase":  "eval",
-            "expr":   f"-{_fmt(operand)}",
-            "result": result,
-            "note":   "",
-        })
+        result = -operand
+        self._log("eval", f"-{_fmt(operand)}", result)
         return result
 
-    def visitFuncCall(self, node: FuncCallNode) -> float:
+    def visitFuncCall(self, node: FuncCallNode):
         arg    = node.arg.accept(self)
         result = super().visitFuncCall(node)
-        self.steps.append({
-            "phase":  "func",
-            "expr":   f"{node.name}({_fmt(arg)})",
-            "result": result,
-            "note":   f"built-in function",
-        })
+        self._log("func", f"{node.name}({_fmt(arg)})", result, "built-in")
         return result
 
-    # ── Override statement visitors ───────────────────────────────────────────
+    def visitUserFuncCall(self, node: UserFuncCallNode):
+        arg    = node.arg.accept(self)
+        result = super().visitUserFuncCall(node)
+        self._log("func", f"{node.name}({_fmt(arg)})", result, "user-defined")
+        return result
+
+    # ── Statement visitors ────────────────────────────────────────────────────
 
     def visitAssignment(self, node: AssignmentNode):
         value = node.expr.accept(self)
-        self._set_var(node.name, value)
-        self.steps.append({
-            "phase":  "assign",
-            "expr":   f"{node.name} = {_fmt(value)}",
-            "result": value,
-            "note":   f"lưu vào symbol table",
-        })
+        self._variables[node.name] = value
+        self._log("assign", f"{node.name} = {_fmt(value)}", value, "lưu vào symbol table")
+
+    def visitIf(self, node: IfNode):
+        cond = node.cond.accept(self)
+        branch = "then" if _truthy(cond) else "else"
+        self._log("control", f"if → {branch}", cond, f"condition = {_fmt(cond)}")
+        super().visitIf(node)
+
+    def visitWhile(self, node: WhileNode):
+        count = 0
+        while _truthy(node.cond.accept(self)):
+            count += 1
+            self._log("control", f"while  iter {count}", True, "loop body")
+            for stmt in node.block:
+                stmt.accept(self)
+            if count >= 100_000:
+                break
+        self._log("control", f"while  done", False, f"{count} iterations")
+
+    def visitFuncDef(self, node: FuncDefNode):
+        super().visitFuncDef(node)
+        self._log("func", f"def {node.name}({node.param})", node.name, "registered")
 
     def visitWriteCmd(self, node: WriteCmdNode):
-        # Gọi parent để thực thi, capture output
+        before = self._out_buf.getvalue()
         super().visitWriteCmd(node)
-        output = self._out_buf.getvalue()
-        # Chỉ lấy dòng vừa in
-        self.steps.append({
-            "phase":  "output",
-            "expr":   f'{"writeln" if node.newline else "write"}',
-            "result": output.strip(),
-            "note":   "in ra màn hình",
-        })
+        after  = self._out_buf.getvalue()
+        output = after[len(before):]
+        self._log("output", "writeln" if node.newline else "write",
+                  output.strip(), "in ra màn hình")
 
     def get_output(self) -> str:
         return self._out_buf.getvalue()
